@@ -28,7 +28,7 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     # ROS packages
-    pkg_roboteq = get_package_share_directory('roboteq_diff_driver')
+    pkg_roboteq = get_package_share_directory('roboteq_ros2_diff_driver')
 
     # Config
     roboteq_config = os.path.join(pkg_roboteq, 'config',
@@ -36,9 +36,9 @@ def generate_launch_description():
 
     # Nodes
     roboteq_diff_driver = Node(
-        package='roboteq_diff_driver',
-        executable='roboteq_diff_driver',
-        name='roboteq_diff_driver',
+        package='roboteq_ros2_diff_driver',
+        executable='roboteq_ros2_diff_driver',
+        name='roboteq_ros2_diff_driver',
         output='screen',
         parameters=[roboteq_config],
     )
