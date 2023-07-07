@@ -77,14 +77,14 @@ Roboteq::Roboteq() : Node("roboteq_diff_driver")
     odom_topic = this->declare_parameter("odom_topic", "odom");
     port = this->declare_parameter("port", "/dev/ttyACM0");
     baud = this->declare_parameter("baud", 115200);
-    open_loop = this->declare_parameter("open_loop", true);
+    open_loop = this->declare_parameter("open_loop", false);
     wheel_circumference = this->declare_parameter("wheel_circumference", 0.55);
     track_width = this->declare_parameter("track_width", 0.89);
     encoder_ppr = this->declare_parameter("encoder_ppr", 1024);
     encoder_cpr = this->declare_parameter("encoder_cpr", 4096);
     max_amps = this->declare_parameter("max_amps", 5.0);
     max_rpm = this->declare_parameter("max_rpm", 100);
-
+    // total_encoder_pulses=0;
     starttime = 0;
     hstimer = 0;
     mstimer = 0;
@@ -115,18 +115,18 @@ Roboteq::Roboteq() : Node("roboteq_diff_driver")
 //
 //  odom publisher
 //
-    odom_pub = this->create_publisher<nav_msgs::msg::Odometry>(odom_topic, 1000);
+    odom_pub = this->create_publisher<nav_msgs::msg::Odometry>(odom_topic, 1);
 //
 // cmd_vel subscriber
 //
 
     cmdvel_sub = this->create_subscription<geometry_msgs::msg::Twist>(
         cmdvel_topic, // topic name
-        1000,         // QoS history depth
+        1,         // QoS history depth
         std::bind(&Roboteq::cmdvel_callback, this, std::placeholders::_1));
     using namespace std::chrono_literals;
     // set odometry publishing loop timer at 10Hz
-    timer_ = this->create_wall_timer(10ms,std::bind(&Roboteq::run, this));
+    timer_ = this->create_wall_timer(3ms,std::bind(&Roboteq::run, this));
     // enable modifying params at run-time
     /*    
     using namespace std::chrono_literals;
@@ -180,43 +180,21 @@ void Roboteq::connect(){
 
 
 void Roboteq::cmdvel_callback(const geometry_msgs::msg::Twist::SharedPtr twist_msg) // const???
-{
+{//otal_encoder_pulses
     // wheel speed (m/s)
-    float right_speed = twist_msg->linear.x + track_width * twist_msg->angular.z / 2.0;
+    float right_speed = twist_msg->linear.x ;//+ track_width * twist_msg->angular.z / 2.0;
     float left_speed = twist_msg->linear.x - track_width * twist_msg->angular.z / 2.0;
 
     std::stringstream right_cmd;
     std::stringstream left_cmd;
     
-
-    if (open_loop)
-    {
-        // motor power (scale 0-1000)
-        RCLCPP_INFO_STREAM(this->get_logger(),"open loop");
-        int32_t right_power = right_speed / wheel_circumference * 60.0 / max_rpm * 1000.0;
-        int32_t left_power = left_speed / wheel_circumference * 60.0 / max_rpm * 1000.0;
-        /*
-        // set minimum to overcome friction if cmd_vel too low
-        if (right_power < 150 && left_power > 0){
-            right_power = 150
-        }
-        if (left_power < 150 && left_power > 0){
-            left_power = 150
-        }
-        */
-        
-        right_cmd << "!G 1 " << right_power << "\r";
-        left_cmd << "!G 2 " << left_power << "\r";
-    }
-    else
-    {
-        // motor speed (rpm)
-        int32_t right_rpm = right_speed / wheel_circumference * 60.0;
-        int32_t left_rpm = left_speed / wheel_circumference * 60.0;
-        
-        right_cmd << "!S 1 " << right_rpm << "\r";
-        left_cmd << "!S 2 " << left_rpm << "\r";
-    }
+    // motor speed (rpm)
+    int32_t right_rpm = right_speed / wheel_circumference * 60.0;
+    std::cout<<"Speed "<<right_speed<<"RPM "<<right_rpm<<std::endl; 
+    int32_t left_rpm = left_speed / wheel_circumference * 60.0;
+    right_cmd << "!S 1 " << right_rpm << "\r";
+    left_cmd << "!S 2 " << left_rpm << "\r";
+    
 //write cmd to motor controller
 #ifndef _CMDVEL_FORCE_RUN
   controller.write(right_cmd.str());
@@ -236,72 +214,11 @@ void Roboteq::cmdvel_setup()
     controller.flush();
 
     // disable echo
-    controller.write("^ECHOF 1\r");
-    controller.flush();
 
     // enable watchdog timer (1000 ms)
     controller.write("^RWD 1000\r");
 
-    // set motor operating mode (1 for closed-loop speed)
-    if (open_loop)
-    {
-        // open-loop speed mode
-        controller.write("^MMOD 1 0\r");
-        controller.write("^MMOD 2 0\r");
-    }
-    else
-    {
-        // closed-loop speed mode
-        controller.write("^MMOD 1 1\r");
-        controller.write("^MMOD 2 1\r");
-    }
-
-    // set motor amps limit (A * 10)
-    std::stringstream right_ampcmd;
-    std::stringstream left_ampcmd;
-    right_ampcmd << "^ALIM 1 " << (int)(max_amps * 10) << "\r";
-    left_ampcmd << "^ALIM 2 " << (int)(max_amps * 10) << "\r";
-    controller.write(right_ampcmd.str());
-    controller.write(left_ampcmd.str());
-
-    // set max speed (rpm) for relative speed commands
-    std::stringstream right_rpmcmd;
-    std::stringstream left_rpmcmd;
-    right_rpmcmd << "^MXRPM 1 " << max_rpm << "\r";
-    left_rpmcmd << "^MXRPM 2 " << max_rpm << "\r";
-    controller.write(right_rpmcmd.str());
-    controller.write(left_rpmcmd.str());
-
-    // set max acceleration rate (2000 rpm/s * 10)
-    controller.write("^MAC 1 20000\r");
-    controller.write("^MAC 2 20000\r");
-
-    // set max deceleration rate (2000 rpm/s * 10)
-    controller.write("^MDEC 1 20000\r");
-    controller.write("^MDEC 2 20000\r");
-
-    // set PID parameters (gain * 10)
-    controller.write("^KP 1 10\r");
-    controller.write("^KP 2 10\r");
-    controller.write("^KI 1 80\r");
-    controller.write("^KI 2 80\r");
-    controller.write("^KD 1 0\r");
-    controller.write("^KD 2 0\r");
-
-    // set encoder mode (18 for feedback on motor1, 34 for feedback on motor2)
-    controller.write("^EMOD 1 18\r");
-    controller.write("^EMOD 2 34\r");
-
-    // set encoder counts (ppr)
-    std::stringstream right_enccmd;
-    std::stringstream left_enccmd;
-    right_enccmd << "^EPPR 1 " << encoder_ppr << "\r";
-    left_enccmd << "^EPPR 2 " << encoder_ppr << "\r";
-    controller.write(right_enccmd.str());
-    controller.write(left_enccmd.str());
-
-    controller.flush();
-}
+   }
 
 void Roboteq::cmdvel_loop()
 {
@@ -432,7 +349,7 @@ void Roboteq::odom_stream()
     //  // start encoder output (10 hz)
     //  controller.write("# C_?CR_# 100\r");
     // start encoder output (30 hz)
-    controller.write("# C_?CR_# 33\r");
+    controller.write("# C_?F_# 33\r");
 
 #endif
     controller.flush();
@@ -461,8 +378,8 @@ void Roboteq::odom_loop()
         {
             odom_buf[odom_idx] = 0;
             // CR= is encoder counts
-            if (odom_buf[0] == 'C' && odom_buf[1] == 'R' && odom_buf[2] == '=')
-            {
+            if (odom_buf[0] == 'F' || odom_buf[1] == 'R' && odom_buf[2] == '=')
+            {   std::cout<<"ODOM BUFFER"<<odom_buf<<std::endl;
                 unsigned int delim;
                 for (delim = 3; delim < odom_idx; delim++)
                 {
@@ -474,7 +391,7 @@ void Roboteq::odom_loop()
                     if (odom_buf[delim] == ':')
                     {
                         odom_buf[delim] = 0;
-                        odom_encoder_right = (int32_t)strtol(odom_buf + 3, NULL, 10);
+                        odom_encoder_right = (int32_t)strtol(odom_buf + 2, NULL, 10);
                         odom_encoder_left = (int32_t)strtol(odom_buf + delim + 1, NULL, 10);
 
                         odom_publish();
@@ -498,12 +415,11 @@ void Roboteq::odom_publish()
     uint32_t nowtime = millis();
     float dt = (float)DELTAT(nowtime, odom_last_time) / 1000.0;
     odom_last_time = nowtime;
-
+    // total_encoder_pulses+=odom_encoder_right;
     // determine deltas of distance and angle
-    float linear = ((float)odom_encoder_right / (float)encoder_cpr * wheel_circumference + (float)odom_encoder_left / (float)encoder_cpr * wheel_circumference) / 2.0;
+    float linear = ((float)odom_encoder_right*wheel_circumference/ 60); // + (float)odom_encoder_left / (float)encoder_cpr * wheel_circumference);
     //  float angular = ((float)odom_encoder_right / (float)encoder_cpr * wheel_circumference - (float)odom_encoder_left / (float)encoder_cpr * wheel_circumference) / track_width * -1.0;
-    float angular = ((float)odom_encoder_right / (float)encoder_cpr * wheel_circumference - (float)odom_encoder_left / (float)encoder_cpr * wheel_circumference) / track_width;
-
+    float angular = 0;//((float)odom_encoder_right /60 wheel_circumference - (float)odom_encoder_left / (float)encoder_cpr * wheel_circumference) / track_width;
     // Update odometry
     odom_x += linear * cos(odom_yaw);         // m
     odom_y += linear * sin(odom_yaw);         // m
@@ -551,12 +467,12 @@ void Roboteq::odom_publish()
     odom_msg.pose.pose.position.y = odom_y;
     odom_msg.pose.pose.position.z = 0.0;
     odom_msg.pose.pose.orientation = quat;
-    odom_msg.twist.twist.linear.x = vx;
-    odom_msg.twist.twist.linear.y = vy;
+    odom_msg.twist.twist.linear.x = linear;
+    odom_msg.twist.twist.linear.y = dt;
     odom_msg.twist.twist.linear.z = 0.0;
     odom_msg.twist.twist.angular.x = 0.0;
     odom_msg.twist.twist.angular.y = 0.0;
-    odom_msg.twist.twist.angular.z = vyaw;
+    odom_msg.twist.twist.angular.z = angular/dt;
     odom_pub->publish(odom_msg);
     // odom_pub.publish(odom_msg); ROS1
 }
