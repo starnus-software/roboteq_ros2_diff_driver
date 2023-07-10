@@ -126,7 +126,11 @@ Roboteq::Roboteq() : Node("roboteq_diff_driver")
         std::bind(&Roboteq::cmdvel_callback, this, std::placeholders::_1));
     using namespace std::chrono_literals;
     // set odometry publishing loop timer at 10Hz
-    timer_ = this->create_wall_timer(3ms,std::bind(&Roboteq::run, this));
+    timer_ = this->create_wall_timer(1ms,std::bind(&Roboteq::run, this));
+    odom_baselink_transform_ =
+      std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+
+
     // enable modifying params at run-time
     /*    
     using namespace std::chrono_literals;
@@ -182,7 +186,7 @@ void Roboteq::connect(){
 void Roboteq::cmdvel_callback(const geometry_msgs::msg::Twist::SharedPtr twist_msg) // const???
 {//otal_encoder_pulses
     // wheel speed (m/s)
-    float right_speed = twist_msg->linear.x ;//+ track_width * twist_msg->angular.z / 2.0;
+    float right_speed = twist_msg->linear.x + track_width * twist_msg->angular.z / 2.0;
     float left_speed = twist_msg->linear.x - track_width * twist_msg->angular.z / 2.0;
 
     std::stringstream right_cmd;
@@ -190,8 +194,9 @@ void Roboteq::cmdvel_callback(const geometry_msgs::msg::Twist::SharedPtr twist_m
     
     // motor speed (rpm)
     int32_t right_rpm = right_speed / wheel_circumference * 60.0;
-    std::cout<<"Speed "<<right_speed<<"RPM "<<right_rpm<<std::endl; 
+    // std::cout<<"Speed "<<right_speed<<"RPM "<<right_rpm<<std::endl; 
     int32_t left_rpm = left_speed / wheel_circumference * 60.0;
+    std::cout<<"Sending Command Velocity"<<right_rpm<<std::endl;
     right_cmd << "!S 1 " << right_rpm << "\r";
     left_cmd << "!S 2 " << left_rpm << "\r";
     
@@ -249,13 +254,12 @@ void Roboteq::cmdvel_run()
 void Roboteq::odom_setup()
 {
     RCLCPP_INFO(this->get_logger(),"setting up odom...");
-    if (pub_odom_tf)
-    {
-        //TODO: implement tf2 broadcaster
+      //TODO: implement tf2 broadcaster
         // RCLCPP_INFO(this->get_logger(), "Broadcasting odom tf"); // might use this-> instead of node
-        //    odom_broadcaster.init(nh);	// ???
+      odom_baselink_transform_ =
+      std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+	
         
-    }
 
     // ROS_INFO_STREAM("Publishing to topic " << odom_topic);
     // maybe use this-> instead of
@@ -309,18 +313,18 @@ void Roboteq::odom_setup()
     odom_msg.twist.covariance[35] = 1000;
 
     // Set up the transform message: move to odom_publish
-    /*
+    
     tf2::Quaternion q;
     q.setRPY(0, 0, odom_yaw);
 
-    tf_msg.transform.translation.x = x;
-    tf_msg.transform.translation.y = y;
-    tf_msg.transform.translation.z = 0.0;
-    tf_msg.transform.rotation.x = q.x();
-    tf_msg.transform.rotation.y = q.y();
-    tf_msg.transform.rotation.z = q.z();
-    tf_msg.transform.rotation.w = q.w();
-    */
+    // tf_msg.transform.translation.x = x;
+    // tf_msg.transform.translation.y = y;
+    // tf_msg.transform.translation.z = 0.0;
+    // tf_msg.transform.rotation.x = q.x();
+    // tf_msg.transform.rotation.y = q.y();
+    // tf_msg.transform.rotation.z = q.z();
+    // tf_msg.transform.rotation.w = q.w();
+    
 
     // start encoder streaming
     RCLCPP_INFO_STREAM(this->get_logger(),"covariance set");
@@ -379,7 +383,8 @@ void Roboteq::odom_loop()
             odom_buf[odom_idx] = 0;
             // CR= is encoder counts
             if (odom_buf[0] == 'F' || odom_buf[1] == 'R' && odom_buf[2] == '=')
-            {   std::cout<<"ODOM BUFFER"<<odom_buf<<std::endl;
+            { 
+                 std::cout<<"ODOM BUFFER"<<odom_buf<<std::endl;
                 unsigned int delim;
                 for (delim = 3; delim < odom_idx; delim++)
                 {
@@ -410,6 +415,7 @@ void Roboteq::odom_loop()
 }
 void Roboteq::odom_publish()
 {
+    geometry_msgs::msg::TransformStamped tf_msg;
 
     // determine delta time in seconds
     uint32_t nowtime = millis();
@@ -417,18 +423,18 @@ void Roboteq::odom_publish()
     odom_last_time = nowtime;
     // total_encoder_pulses+=odom_encoder_right;
     // determine deltas of distance and angle
-    float linear = ((float)odom_encoder_right*wheel_circumference/ 60); // + (float)odom_encoder_left / (float)encoder_cpr * wheel_circumference);
+    float linear = ((float)odom_encoder_right*wheel_circumference/ 60 + (float)odom_encoder_left * wheel_circumference/60)/2;
     //  float angular = ((float)odom_encoder_right / (float)encoder_cpr * wheel_circumference - (float)odom_encoder_left / (float)encoder_cpr * wheel_circumference) / track_width * -1.0;
-    float angular = 0;//((float)odom_encoder_right /60 wheel_circumference - (float)odom_encoder_left / (float)encoder_cpr * wheel_circumference) / track_width;
+    float angular = ((float)odom_encoder_right*wheel_circumference/ 60 - (float)odom_encoder_left * wheel_circumference/60) / track_width;
     // Update odometry
     odom_x += linear * cos(odom_yaw);         // m
     odom_y += linear * sin(odom_yaw);         // m
     odom_yaw = NORMALIZE(odom_yaw + angular); // rad
 
-    // Calculate velocities
-    float vx = (odom_x - odom_last_x) / dt;
-    float vy = (odom_y - odom_last_y) / dt;
-    float vyaw = (odom_yaw - odom_last_yaw) / dt;
+    // // Calculate velocities
+    // float vx = (odom_x - odom_last_x) / dt;
+    // float vy = (odom_y - odom_last_y) / dt;
+    // float vyaw = (odom_yaw - odom_last_yaw) / dt;
 
     odom_last_x = odom_x;
     odom_last_y = odom_y;
@@ -443,12 +449,11 @@ void Roboteq::odom_publish()
 
     //tf2::Quaternion quat = tf2::createQuaternionMsgFromYaw(odom_yaw);
     // TODO: set up tf2_ros
-    /*
-    geometry_msgs::msg::Quaternion quat = tf2::toMsg(tf2::Quaternion(tf2::Vector3(0, 0, 1), odom_yaw));
-    if ( pub_odom_tf )
-    {
-        tf_msg.header.seq++;
-        tf_msg.header.stamp = rclcpp::Clock::now();
+    
+    quat = tf2::toMsg(tf2::Quaternion(tf2::Vector3(0, 0, 1), odom_yaw));
+    // if ( pub_odom_tf )
+    // {
+        tf_msg.header.stamp = this->get_clock()->now();
         tf_msg.header.frame_id = odom_frame;
         tf_msg.child_frame_id = base_frame;
 
@@ -456,23 +461,24 @@ void Roboteq::odom_publish()
         tf_msg.transform.translation.y = odom_y;
         tf_msg.transform.translation.z = 0.0;
         tf_msg.transform.rotation = quat;
-        odom_broadcaster.sendTransform(tf_msg);
-    }
-    */
+        odom_baselink_transform_->sendTransform(tf_msg);
+
+    // }
+    
     //update odom msg
 
     //odom_msg->header.seq++; //? not used in ros2 ?
     odom_msg.header.stamp = this->get_clock()->now();
-    odom_msg.pose.pose.position.x = odom_x;
-    odom_msg.pose.pose.position.y = odom_y;
+    odom_msg.pose.pose.position.x = odom_x*dt;
+    odom_msg.pose.pose.position.y = odom_y*dt;
     odom_msg.pose.pose.position.z = 0.0;
     odom_msg.pose.pose.orientation = quat;
-    odom_msg.twist.twist.linear.x = linear;
-    odom_msg.twist.twist.linear.y = dt;
+    odom_msg.twist.twist.linear.x = odom_x;
+    odom_msg.twist.twist.linear.y = 0.0;
     odom_msg.twist.twist.linear.z = 0.0;
     odom_msg.twist.twist.angular.x = 0.0;
     odom_msg.twist.twist.angular.y = 0.0;
-    odom_msg.twist.twist.angular.z = angular/dt;
+    odom_msg.twist.twist.angular.z = angular;
     odom_pub->publish(odom_msg);
     // odom_pub.publish(odom_msg); ROS1
 }

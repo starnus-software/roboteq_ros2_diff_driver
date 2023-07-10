@@ -15,6 +15,7 @@
 #include "nav_msgs/msg/odometry.hpp"
 
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include "tf2_ros/transform_broadcaster.h"
 
 namespace Roboteq
 {
@@ -27,6 +28,7 @@ class Roboteq : public rclcpp::Node
   private:
   // class atributes
   //rclcpp::Node::SharedPtr nh{};
+  std::unique_ptr<tf2_ros::TransformBroadcaster> odom_baselink_transform_;
 
   uint32_t starttime{};
   uint32_t hstimer{};
