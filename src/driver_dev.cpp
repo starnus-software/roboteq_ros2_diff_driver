@@ -193,10 +193,10 @@ void Roboteq::cmdvel_callback(const geometry_msgs::msg::Twist::SharedPtr twist_m
     std::stringstream left_cmd;
     
     // motor speed (rpm)
-    int32_t right_rpm = right_speed / wheel_circumference * 60.0;
+    int32_t right_rpm = right_speed *GEAR_RATIO/ wheel_circumference * 60.0;
     // std::cout<<"Speed "<<right_speed<<"RPM "<<right_rpm<<std::endl; 
-    int32_t left_rpm = left_speed / wheel_circumference * 60.0;
-    std::cout<<"Sending Command Velocity"<<right_rpm<<std::endl;
+    int32_t left_rpm = left_speed *GEAR_RATIO/ wheel_circumference * 60.0;
+    // std::cout<<"Sending Command Velocity"<<right_rpm<<std::endl;
     right_cmd << "!S 1 " << right_rpm << "\r";
     left_cmd << "!S 2 " << left_rpm << "\r";
     
@@ -384,7 +384,7 @@ void Roboteq::odom_loop()
             // CR= is encoder counts
             if (odom_buf[0] == 'F' || odom_buf[1] == 'R' && odom_buf[2] == '=')
             { 
-                 std::cout<<"ODOM BUFFER"<<odom_buf<<std::endl;
+                //  std::cout<<"ODOM BUFFER"<<odom_buf<<std::endl;
                 unsigned int delim;
                 for (delim = 3; delim < odom_idx; delim++)
                 {
@@ -423,9 +423,9 @@ void Roboteq::odom_publish()
     odom_last_time = nowtime;
     // total_encoder_pulses+=odom_encoder_right;
     // determine deltas of distance and angle
-    float linear = ((float)odom_encoder_right*wheel_circumference/ 60 + (float)odom_encoder_left * wheel_circumference/60)/2;
+    float linear = ((float)odom_encoder_right*wheel_circumference/(60*GEAR_RATIO) + (float)odom_encoder_left * wheel_circumference/(60*GEAR_RATIO))/2;
     //  float angular = ((float)odom_encoder_right / (float)encoder_cpr * wheel_circumference - (float)odom_encoder_left / (float)encoder_cpr * wheel_circumference) / track_width * -1.0;
-    float angular = ((float)odom_encoder_right*wheel_circumference/ 60 - (float)odom_encoder_left * wheel_circumference/60) / track_width;
+    float angular = ((float)odom_encoder_right*wheel_circumference/(60*GEAR_RATIO) - (float)odom_encoder_left * wheel_circumference/(60*GEAR_RATIO)) / track_width;
     // Update odometry
     odom_x += linear * cos(odom_yaw);         // m
     odom_y += linear * sin(odom_yaw);         // m
@@ -473,7 +473,7 @@ void Roboteq::odom_publish()
     odom_msg.pose.pose.position.y = odom_y*dt;
     odom_msg.pose.pose.position.z = 0.0;
     odom_msg.pose.pose.orientation = quat;
-    odom_msg.twist.twist.linear.x = odom_x;
+    odom_msg.twist.twist.linear.x = linear;
     odom_msg.twist.twist.linear.y = 0.0;
     odom_msg.twist.twist.linear.z = 0.0;
     odom_msg.twist.twist.angular.x = 0.0;

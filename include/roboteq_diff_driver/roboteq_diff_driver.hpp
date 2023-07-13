@@ -71,6 +71,7 @@ class Roboteq : public rclcpp::Node
   int encoder_cpr{};
   double max_amps{};
   int max_rpm{};
+  float GEAR_RATIO =9.2;
   // Test different odom msg memory
   //nav_msgs::msg::Odometry odom_msg{};
   nav_msgs::msg::Odometry odom_msg{};
