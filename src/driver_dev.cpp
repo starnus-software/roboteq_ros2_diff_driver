@@ -75,13 +75,13 @@ Roboteq::Roboteq() : Node("roboteq_diff_driver")
     base_frame = this->declare_parameter("base_frame", "base_link");
     cmdvel_topic = this->declare_parameter("cmdvel_topic", "cmd_vel");
     odom_topic = this->declare_parameter("odom_topic", "odom");
-    port = this->declare_parameter("port", "/dev/ttyACM0");
+    port = this->declare_parameter("port", "/dev/motor_controller");
     baud = this->declare_parameter("baud", 115200);
     open_loop = this->declare_parameter("open_loop", false);
-    wheel_circumference = this->declare_parameter("wheel_circumference", 0.55);
-    track_width = this->declare_parameter("track_width", 0.89);
-    encoder_ppr = this->declare_parameter("encoder_ppr", 1024);
-    encoder_cpr = this->declare_parameter("encoder_cpr", 4096);
+    wheel_circumference = this->declare_parameter("wheel_circumference", 0.49);
+    track_width = this->declare_parameter("track_width", 0.54);
+    encoder_ppr = this->declare_parameter("encoder_ppr", 4096);
+    encoder_cpr = this->declare_parameter("encoder_cpr", 16384);
     max_amps = this->declare_parameter("max_amps", 5.0);
     max_rpm = this->declare_parameter("max_rpm", 100);
     // total_encoder_pulses=0;
@@ -298,19 +298,19 @@ void Roboteq::odom_setup()
         odom_msg.twist.covariance[i] = 0;
     }
 
-    odom_msg.pose.covariance[7] = 0.001;
-    odom_msg.pose.covariance[14] = 1000000;
-    odom_msg.pose.covariance[21] = 1000000;
-    odom_msg.pose.covariance[28] = 1000000;
-    odom_msg.pose.covariance[35] = 1000;
+    odom_msg.pose.covariance[7] = 0.1;
+    odom_msg.pose.covariance[14] = 0.1;
+    odom_msg.pose.covariance[21] = 0.1;
+    odom_msg.pose.covariance[28] = 0.1;
+    odom_msg.pose.covariance[35] = 0.1;
 
     // Set up the twist covariance
-    odom_msg.twist.covariance[0] = 0.001;
-    odom_msg.twist.covariance[7] = 0.001;
-    odom_msg.twist.covariance[14] = 1000000;
-    odom_msg.twist.covariance[21] = 1000000;
-    odom_msg.twist.covariance[28] = 1000000;
-    odom_msg.twist.covariance[35] = 1000;
+    odom_msg.twist.covariance[0] = 0.1;
+    odom_msg.twist.covariance[7] = 0.1;
+    odom_msg.twist.covariance[14] = 0.1;
+    odom_msg.twist.covariance[21] = 0.1;
+    odom_msg.twist.covariance[28] = 0.1;
+    odom_msg.twist.covariance[35] = 0.1;
 
     // Set up the transform message: move to odom_publish
     
@@ -427,9 +427,9 @@ void Roboteq::odom_publish()
     //  float angular = ((float)odom_encoder_right / (float)encoder_cpr * wheel_circumference - (float)odom_encoder_left / (float)encoder_cpr * wheel_circumference) / track_width * -1.0;
     float angular = ((float)odom_encoder_right*wheel_circumference/(60*GEAR_RATIO) - (float)odom_encoder_left * wheel_circumference/(60*GEAR_RATIO)) / track_width;
     // Update odometry
-    odom_x += linear * cos(odom_yaw);         // m
-    odom_y += linear * sin(odom_yaw);         // m
-    odom_yaw = NORMALIZE(odom_yaw + angular); // rad
+    odom_x += linear * dt * cos(odom_yaw);         // m
+    odom_y += linear * dt * sin(odom_yaw);         // m
+    odom_yaw = NORMALIZE(odom_yaw + angular * dt); // rad
 
     // // Calculate velocities
     // float vx = (odom_x - odom_last_x) / dt;
